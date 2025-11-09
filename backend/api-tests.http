@@ -1,0 +1,70 @@
+// API Test File - Use with REST client (Thunder Client, Postman, or VS Code REST Client)
+
+### 1. Health Check
+GET http://localhost:5000/health
+
+### 2. Login as Admin
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@factory.com",
+  "password": "password123"
+}
+
+### 3. Login as Shop Incharge
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "shop@factory.com",
+  "password": "password123"
+}
+
+### 4. Login as Operator
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "operator@factory.com",
+  "password": "password123"
+}
+
+### 5. Login with Invalid Credentials (Should Fail)
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@factory.com",
+  "password": "wrongpassword"
+}
+
+### 6. Get Current User
+# Replace <accessToken> with token from login response
+GET http://localhost:5000/api/auth/me
+Authorization: Bearer <accessToken>
+
+### 7. Refresh Access Token
+POST http://localhost:5000/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "<refreshToken>"
+}
+
+### 8. Change Password
+PUT http://localhost:5000/api/auth/change-password
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "currentPassword": "password123",
+  "newPassword": "newpassword456"
+}
+
+### 9. Logout
+POST http://localhost:5000/api/auth/logout
+Authorization: Bearer <accessToken>
+
+### 10. Try Accessing Protected Route Without Token (Should Fail)
+GET http://localhost:5000/api/auth/me

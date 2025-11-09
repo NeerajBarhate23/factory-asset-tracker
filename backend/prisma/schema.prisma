@@ -1,0 +1,218 @@
+// Prisma Schema for Factory Asset Tracking System
+// Database: MySQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table with role-based access control
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Bcrypt hashed
+  name      String
+  role      Role     @default(OPERATOR)
+  department String?
+  refreshToken String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  assetsCreated    Asset[]       @relation("AssetCreator")
+  assetsAssigned   Asset[]       @relation("AssetAssignee")
+  movements        Movement[]
+  audits           Audit[]
+  activities       Activity[]
+  filesUploaded    AssetFile[]
+
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  ADMIN
+  SHOP_INCHARGE
+  MAINTENANCE
+  OPERATOR
+}
+
+// Assets table
+model Asset {
+  id                   String         @id @default(uuid())
+  assetUid             String         @unique
+  name                 String
+  category             AssetCategory
+  status               AssetStatus    @default(ACTIVE)
+  location             String
+  criticality          Criticality    @default(MEDIUM)
+  ownerDepartment      String?
+  make                 String?
+  model                String?
+  serialNumber         String?
+  purchaseDate         DateTime?
+  warrantyExpiry       DateTime?
+  lastMaintenanceDate  DateTime?
+  nextMaintenanceDate  DateTime?
+  specifications       String?        @db.Text
+  notes                String?        @db.Text
+  qrCode               String?        @db.Text
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  // Foreign Keys
+  createdById  String
+  assignedToId String?
+
+  // Relations
+  createdBy    User          @relation("AssetCreator", fields: [createdById], references: [id])
+  assignedTo   User?         @relation("AssetAssignee", fields: [assignedToId], references: [id])
+  movements    Movement[]
+  audits       Audit[]
+  files        AssetFile[]
+
+  @@index([assetUid])
+  @@index([category])
+  @@index([status])
+  @@index([location])
+  @@index([createdById])
+}
+
+enum AssetCategory {
+  TOOL_ROOM_SPM
+  CNC_MACHINE
+  WORKSTATION
+  MATERIAL_HANDLING
+}
+
+enum AssetStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+  RETIRED
+}
+
+enum Criticality {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Movements table
+model Movement {
+  id            String         @id @default(uuid())
+  assetId       String
+  fromLocation  String
+  toLocation    String
+  status        MovementStatus @default(PENDING)
+  reason        String?        @db.Text
+  notes         String?        @db.Text
+  slaHours      Int            @default(24)
+  requestDate   DateTime       @default(now())
+  approvalDate  DateTime?
+  dispatchedAt  DateTime?
+  receivedAt    DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Foreign Keys
+  requestedById String
+  approvedById  String?
+
+  // Relations
+  asset        Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  requestedBy  User   @relation(fields: [requestedById], references: [id])
+
+  @@index([assetId])
+  @@index([requestedById])
+  @@index([status])
+}
+
+enum MovementStatus {
+  PENDING
+  APPROVED
+  IN_TRANSIT
+  COMPLETED
+  REJECTED
+}
+
+// Audits table
+model Audit {
+  id              String      @id @default(uuid())
+  location        String?
+  category        AssetCategory?
+  scheduledDate   DateTime
+  completedDate   DateTime?
+  status          AuditStatus @default(SCHEDULED)
+  assetsScanned   Int         @default(0)
+  totalAssets     Int         @default(0)
+  discrepancies   Int         @default(0)
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Foreign Keys
+  assetId    String?
+  auditorId  String
+
+  // Relations
+  asset    Asset?  @relation(fields: [assetId], references: [id])
+  auditor  User    @relation(fields: [auditorId], references: [id])
+
+  @@index([auditorId])
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+enum AuditStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  DISCREPANCY_FOUND
+}
+
+// Activity logs for audit trail
+model Activity {
+  id          String   @id @default(uuid())
+  action      String
+  entityType  String
+  entityId    String?
+  details     String?  @db.Text
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  // Foreign Keys
+  userId String
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([entityType])
+}
+
+// Asset files/attachments
+model AssetFile {
+  id          String   @id @default(uuid())
+  fileName    String
+  fileType    String
+  fileSize    Int
+  filePath    String
+  uploadedAt  DateTime @default(now())
+
+  // Foreign Keys
+  assetId     String
+  uploadedById String
+
+  // Relations
+  asset       Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  uploadedBy  User  @relation(fields: [uploadedById], references: [id])
+
+  @@index([assetId])
+}
