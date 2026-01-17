@@ -23,7 +23,8 @@ export function Navbar() {
   };
 
   // Get user initials for avatar
-  const getInitials = (name: string) => {
+  const getInitials = (name: string | undefined) => {
+    if (!name) return 'U';
     return name
       .split(' ')
       .map((n) => n[0])
@@ -100,11 +101,11 @@ export function Navbar() {
               <Button variant="ghost" className="gap-2 pl-2 pr-3">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="bg-primary text-primary-foreground">
-                    {user ? getInitials(user.name) : <User className="h-4 w-4" />}
+                    {user ? getInitials((user as any).full_name || user.email) : <User className="h-4 w-4" />}
                   </AvatarFallback>
                 </Avatar>
                 <div className="hidden md:block text-left">
-                  <p className="text-sm leading-none">{user?.name || 'User'}</p>
+                  <p className="text-sm leading-none">{(user as any)?.full_name || user?.email || 'User'}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {user ? formatRole(user.role) : ''}
                   </p>

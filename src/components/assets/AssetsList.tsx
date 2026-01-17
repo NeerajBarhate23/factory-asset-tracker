@@ -88,13 +88,24 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
   };
 
   // Apply frontend filters
-  const filteredAssets = assets.filter((asset) => {
+  const filteredAssets = assets.filter((asset: any) => {
+    const locationName = asset.current_location || asset.location_name || asset.location?.name || '';
+    const assetUid = asset.asset_uid || asset.asset_tag || '';
     const matchesSearch =
       asset.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.asset_uid?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.location?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || asset.category === categoryFilter;
-    const matchesStatus = statusFilter === 'all' || asset.status === statusFilter;
+      assetUid.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      locationName.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Normalize category for comparison (handle both formats)
+    const assetCategory = asset.category?.toLowerCase().replace(/\s+/g, '_');
+    const filterCategory = categoryFilter.toLowerCase().replace(/\s+/g, '_');
+    const matchesCategory = categoryFilter === 'all' || assetCategory === filterCategory;
+    
+    // Normalize status for comparison (handle both formats)
+    const assetStatus = asset.status?.toLowerCase().replace(/\s+/g, '_');
+    const filterStatus = statusFilter.toLowerCase().replace(/\s+/g, '_');
+    const matchesStatus = statusFilter === 'all' || assetStatus === filterStatus;
+    
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
@@ -166,8 +177,8 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
 
   // Handler for editing asset
   const handleEditAsset = (assetId: string) => {
-    toast.info('Edit asset feature - Coming soon');
-    // TODO: Open edit dialog
+    setSelectedAssetForEdit(assetId);
+    setRegistrationDialogOpen(true);
   };
 
   // Helper functions to display values
@@ -198,6 +209,28 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
         <Card className="p-6">
           <div className="text-center py-12 text-destructive">
             <p>Error loading assets: {error.message}</p>
+            <Button onClick={refetch} className="mt-4">Try Again</Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (loading && assets.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1>Assets</h1>
+            <p className="text-muted-foreground mt-1">
+              Manage and track all factory assets
+            </p>
+          </div>
+        </div>
+        <Card className="p-6">
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="ml-3 text-muted-foreground">Loading assets...</p>
           </div>
         </Card>
       </div>
@@ -234,7 +267,11 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
       {/* Asset Registration Dialog */}
       <AssetRegistrationDialog
         open={registrationDialogOpen}
-        onOpenChange={setRegistrationDialogOpen}
+        onOpenChange={(open) => {
+          setRegistrationDialogOpen(open);
+          if (!open) setSelectedAssetForEdit(null);
+        }}
+        assetId={selectedAssetForEdit}
       />
 
       <Card className="p-6">
@@ -243,7 +280,7 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search by name, UID, or location..."
+              placeholder="Search by name or location..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9 min-h-[44px]"
@@ -322,7 +359,6 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
                         Asset Name <ArrowUpDown className="ml-2 h-4 w-4" />
                       </Button>
                     </TableHead>
-                    <TableHead>UID</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Current Location</TableHead>
                     <TableHead>Status</TableHead>
@@ -348,13 +384,10 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
                         <p>{asset.name}</p>
                       </TableCell>
                       <TableCell onClick={() => onViewAsset(asset.id)}>
-                        <code className="text-xs bg-muted px-2 py-1 rounded">{asset.asset_uid}</code>
-                      </TableCell>
-                      <TableCell onClick={() => onViewAsset(asset.id)}>
                         <span className="text-sm">{displayCategory(asset.category)}</span>
                       </TableCell>
                       <TableCell onClick={() => onViewAsset(asset.id)}>
-                        <span className="text-sm">{asset.location}</span>
+                        <span className="text-sm">{asset.current_location || (asset as any).location || 'N/A'}</span>
                       </TableCell>
                       <TableCell onClick={() => onViewAsset(asset.id)}>
                         <Badge variant="outline" className={getStatusColor(asset.status)}>
@@ -415,7 +448,7 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
                     />
                     <div className="flex-1 min-w-0">
                       <h4 className="mb-1">{asset.name}</h4>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{asset.asset_uid}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">{asset.asset_tag}</code>
                       <div className="mt-3 space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Category:</span>
@@ -423,7 +456,7 @@ export function AssetsList({ onViewAsset }: AssetsListProps) {
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Location:</span>
-                          <span className="text-right">{asset.location}</span>
+                          <span className="text-right">{(asset as any).location_name || (asset as any).location?.name || 'N/A'}</span>
                         </div>
                         <div className="flex justify-between text-sm items-center">
                           <span className="text-muted-foreground">Status:</span>

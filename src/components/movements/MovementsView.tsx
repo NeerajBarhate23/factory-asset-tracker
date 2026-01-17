@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import QrScanner from 'react-qr-scanner';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -29,33 +30,52 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
-import { Plus, Clock, CheckCircle, XCircle, QrCode } from 'lucide-react';
+import { Plus, Clock, CheckCircle, XCircle, QrCode, Camera, Keyboard } from 'lucide-react';
 import { Progress } from '../ui/progress';
 import { useMovements } from '../../hooks/useMovements';
 import { useAssets } from '../../hooks/useAssets';
+import { useLocations } from '../../hooks/useLocations';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'sonner@2.0.3';
 
 export function MovementsView() {
   const { user } = useAuth();
-  const { movements, loading, createMovement, approveMovement, rejectMovement } = useMovements();
-  const { assets } = useAssets();
+  const { movements, loading, createMovement, approveMovement, rejectMovement, dispatchMovement, completeMovement } = useMovements();
+  const { assets, refetch: refetchAssets } = useAssets();
+  const { locations } = useLocations();
   
   const [showRequestDialog, setShowRequestDialog] = useState(false);
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [selectedMovement, setSelectedMovement] = useState<string | null>(null);
+  const [showDispatchScanner, setShowDispatchScanner] = useState(false);
+  const [showReceiptScanner, setShowReceiptScanner] = useState(false);
+  const [scanningMovement, setScanningMovement] = useState<any>(null);
+  const [scannedCode, setScannedCode] = useState('');
+  const [useCameraMode, setUseCameraMode] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   
   // Form state
   const [formData, setFormData] = useState({
     assetId: '',
-    toLocation: '',
+    toLocation: '',  // Changed from toLocationId to toLocation (TEXT)
     reason: '',
   });
 
-  const pendingMovements = movements.filter((m) => m.status === 'PENDING');
-  const approvedMovements = movements.filter((m) => m.status === 'APPROVED');
-  const inTransitMovements = movements.filter((m) => m.status === 'IN_TRANSIT');
-  const completedMovements = movements.filter((m) => m.status === 'COMPLETED');
+  const pendingMovements = movements.filter((m) => m.status === 'Pending');
+  const approvedMovements = movements.filter((m) => m.status === 'Approved');
+  const inTransitMovements = movements.filter((m) => m.status === 'In Transit');
+  const completedMovements = movements.filter((m) => m.status === 'Completed');
+
+  // Debug logging
+  console.log('🔍 [MovementsView] Total movements:', movements.length);
+  console.log('📊 [MovementsView] Movement counts:', {
+    pending: pendingMovements.length,
+    approved: approvedMovements.length,
+    inTransit: inTransitMovements.length,
+    completed: completedMovements.length,
+  });
+  console.log('📦 [MovementsView] Sample movement:', movements[0]);
+  console.log('🔍 [MovementsView] Movement statuses:', movements.map(m => m.status));
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -112,8 +132,8 @@ export function MovementsView() {
       return;
     }
 
-    // Check if asset has location
-    if (!asset.location) {
+    // Check if asset has current_location
+    if (!asset.current_location) {
       toast.error('Selected asset does not have a location set');
       return;
     }
@@ -122,13 +142,9 @@ export function MovementsView() {
 
     const result = await createMovement({
       asset_id: formData.assetId,
-      from_location: asset.location,
-      to_location: formData.toLocation,
-      requested_by: user.id,
-      status: 'Pending',
+      from_location: asset.current_location,  // TEXT field
+      to_location: formData.toLocation,        // TEXT field
       reason: formData.reason,
-      sla_hours: 24,
-      request_date: new Date().toISOString(),
     });
 
     if (result.success) {
@@ -166,22 +182,131 @@ export function MovementsView() {
     }
   };
 
+  const handleDispatch = async (movementId: string) => {
+    const movement = movements.find(m => m.id === movementId);
+    if (!movement) return;
+    
+    setScanningMovement(movement);
+    setScannedCode('');
+    setShowDispatchScanner(true);
+  };
+
+  const handleComplete = async (movementId: string) => {
+    const movement = movements.find(m => m.id === movementId);
+    if (!movement) return;
+    
+    setScanningMovement(movement);
+    setScannedCode('');
+    setShowReceiptScanner(true);
+  };
+
+  const extractAssetFromScannedCode = (scannedValue: string) => {
+    // Check if scanned value is a URL with asset_id parameter
+    try {
+      const url = new URL(scannedValue);
+      const assetIdParam = url.searchParams.get('asset_id');
+      if (assetIdParam) {
+        // Find asset by ID
+        return assets.find(a => a.id === assetIdParam);
+      }
+    } catch {
+      // Not a URL, treat as plain text (asset_uid or asset_tag)
+    }
+    
+    // Try to find asset by UID or tag
+    return assets.find(a => 
+      a.asset_uid === scannedValue.trim() || 
+      (a as any).asset_tag === scannedValue.trim()
+    );
+  };
+
+  const confirmDispatch = async () => {
+    if (!user || !scanningMovement) return;
+    
+    // Get the expected asset for this movement
+    const expectedAsset = assets.find(a => a.id === scanningMovement.asset_id);
+    if (!expectedAsset) {
+      toast.error('Asset not found for this movement');
+      return;
+    }
+    
+    // Get the asset from scanned code (handles both URL and plain UID)
+    const scannedAsset = extractAssetFromScannedCode(scannedCode);
+    
+    // Verify scanned asset matches expected asset
+    if (!scannedAsset || scannedAsset.id !== expectedAsset.id) {
+      const expectedCode = expectedAsset.asset_uid || (expectedAsset as any).asset_tag;
+      toast.error(`QR code mismatch! Expected asset: ${expectedAsset.name} (${expectedCode})`);
+      return;
+    }
+    
+    const result = await dispatchMovement(scanningMovement.id);
+    if (result.success) {
+      toast.success('Asset dispatched successfully');
+      setShowDispatchScanner(false);
+      setScanningMovement(null);
+      setScannedCode('');
+    } else {
+      toast.error(result.error || 'Failed to dispatch asset');
+    }
+  };
+
+  const confirmReceipt = async () => {
+    if (!user || !scanningMovement) return;
+    
+    // Get the expected asset for this movement
+    const expectedAsset = assets.find(a => a.id === scanningMovement.asset_id);
+    if (!expectedAsset) {
+      toast.error('Asset not found for this movement');
+      return;
+    }
+    
+    // Get the asset from scanned code (handles both URL and plain UID)
+    const scannedAsset = extractAssetFromScannedCode(scannedCode);
+    
+    // Verify scanned asset matches expected asset
+    if (!scannedAsset || scannedAsset.id !== expectedAsset.id) {
+      const expectedCode = expectedAsset.asset_uid || (expectedAsset as any).asset_tag;
+      toast.error(`QR code mismatch! Expected asset: ${expectedAsset.name} (${expectedCode})`);
+      return;
+    }
+    
+    const result = await completeMovement(scanningMovement.id);
+    if (result.success) {
+      toast.success('Movement completed successfully');
+      setShowReceiptScanner(false);
+      setScanningMovement(null);
+      setScannedCode('');
+      // Refresh assets to show updated location
+      await refetchAssets();
+    } else {
+      toast.error(result.error || 'Failed to complete movement');
+    }
+  };
+
   // Get asset name by id
   const getAssetName = (assetId: string) => {
     const asset = assets.find((a) => a.id === assetId);
     if (asset) return asset.name;
     // Fallback: check if movement has embedded asset data from backend
-    const movement = movements.find(m => m.assetId === assetId);
+    const movement = movements.find(m => m.asset_id === assetId);
     return movement?.asset?.name || 'Unknown Asset';
   };
 
   // Get asset UID by id
   const getAssetUID = (assetId: string) => {
     const asset = assets.find((a) => a.id === assetId);
-    if (asset) return asset.asset_uid;
+    if (asset) return asset.asset_tag || asset.asset_uid;
     // Fallback: check if movement has embedded asset data from backend
-    const movement = movements.find(m => m.assetId === assetId);
-    return movement?.asset?.assetUid || '';
+    const movement = movements.find(m => m.asset_id === assetId);
+    return movement?.asset?.asset_tag || '';
+  };
+
+  // Get location name by id
+  const getLocationName = (locationId: string | undefined) => {
+    if (!locationId) return 'Unknown Location';
+    const location = locations.find((l) => l.id === locationId);
+    return location?.name || 'Unknown Location';
   };
 
   const selectedMovementData = movements.find((m) => m.id === selectedMovement);
@@ -224,7 +349,7 @@ export function MovementsView() {
                 <SelectContent>
                   {assets.map((asset) => (
                     <SelectItem key={asset.id} value={asset.id}>
-                      {asset.name} ({asset.asset_uid})
+                      {asset.name} ({asset.asset_tag || asset.asset_uid})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -232,47 +357,23 @@ export function MovementsView() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="from">Current Location</Label>
-              <Select value={assets.find((a) => a.id === formData.assetId)?.location || ''} disabled>
-                <SelectTrigger id="from" className="min-h-[44px]">
-                  <SelectValue placeholder="Select an asset first" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={assets.find((a) => a.id === formData.assetId)?.location || 'none'}>
-                    {assets.find((a) => a.id === formData.assetId)?.location || 'No location'}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                id="from"
+                value={assets.find((a) => a.id === formData.assetId)?.current_location || ''}
+                disabled
+                placeholder="Select an asset first"
+                className="min-h-[44px]"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="to">To Location</Label>
-              <Select 
-                value={formData.toLocation} 
-                onValueChange={(value) => setFormData({ ...formData, toLocation: value })}
-              >
-                <SelectTrigger id="to" className="min-h-[44px]">
-                  <SelectValue placeholder="Select destination location" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Production Floor A - Bay 1">Production Floor A - Bay 1</SelectItem>
-                  <SelectItem value="Production Floor A - Bay 2">Production Floor A - Bay 2</SelectItem>
-                  <SelectItem value="Production Floor A - Bay 3">Production Floor A - Bay 3</SelectItem>
-                  <SelectItem value="Production Floor B - Bay 1">Production Floor B - Bay 1</SelectItem>
-                  <SelectItem value="Production Floor B - Bay 5">Production Floor B - Bay 5</SelectItem>
-                  <SelectItem value="Production Floor C">Production Floor C</SelectItem>
-                  <SelectItem value="Warehouse - Zone A">Warehouse - Zone A</SelectItem>
-                  <SelectItem value="Warehouse - Zone B">Warehouse - Zone B</SelectItem>
-                  <SelectItem value="Tool Room - Section A">Tool Room - Section A</SelectItem>
-                  <SelectItem value="Tool Room - Section B">Tool Room - Section B</SelectItem>
-                  <SelectItem value="Tool Room - Section C">Tool Room - Section C</SelectItem>
-                  <SelectItem value="Assembly Line 1">Assembly Line 1</SelectItem>
-                  <SelectItem value="Assembly Line 2">Assembly Line 2</SelectItem>
-                  <SelectItem value="Assembly Line 3">Assembly Line 3</SelectItem>
-                  <SelectItem value="Maintenance Workshop">Maintenance Workshop</SelectItem>
-                  <SelectItem value="Quality Control Lab">Quality Control Lab</SelectItem>
-                  <SelectItem value="Shipping Dock">Shipping Dock</SelectItem>
-                  <SelectItem value="Receiving Area">Receiving Area</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input 
+                id="to"
+                value={formData.toLocation}
+                onChange={(e) => setFormData({ ...formData, toLocation: e.target.value })}
+                placeholder="Enter destination location (e.g., Bay 3, Tool Room B)"
+                className="min-h-[44px]"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="reason">Reason for Movement</Label>
@@ -318,11 +419,11 @@ export function MovementsView() {
                 </div>
                 <div>
                   <p className="text-muted-foreground">From</p>
-                  <p className="mt-1">{selectedMovementData.fromLocation || selectedMovementData.from_location}</p>
+                  <p className="mt-1">{selectedMovementData.from_location || 'Unknown'}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">To</p>
-                  <p className="mt-1">{selectedMovementData.toLocation || selectedMovementData.to_location}</p>
+                  <p className="mt-1">{selectedMovementData.to_location || 'Unknown'}</p>
                 </div>
               </div>
               <div>
@@ -383,11 +484,11 @@ export function MovementsView() {
               <div className="space-y-4">
                 {pendingMovements.map((movement) => {
                   const slaProgress = getSLAProgress(movement);
-                  const assetId = movement.assetId || movement.asset_id;
-                  const fromLoc = movement.fromLocation || movement.from_location;
-                  const toLoc = movement.toLocation || movement.to_location;
-                  const reqDate = movement.createdAt || movement.request_date;
-                  const slaHrs = movement.slaHours || movement.sla_hours || 24;
+                  const assetId = movement.asset_id;
+                  const fromLoc = movement.from_location || 'Unknown';
+                  const toLoc = movement.to_location || 'Unknown';
+                  const reqDate = movement.created_at || movement.createdAt;
+                  const slaHrs = 24;
                   
                   return (
                     <Card key={movement.id} className="p-4 border-2">
@@ -509,7 +610,7 @@ export function MovementsView() {
                           </div>
                         </div>
                       </div>
-                      <Button className="min-h-[44px]">
+                      <Button className="min-h-[44px]" onClick={() => handleDispatch(movement.id)}>
                         <QrCode className="h-4 w-4 mr-2" />
                         Scan for Dispatch
                       </Button>
@@ -571,7 +672,7 @@ export function MovementsView() {
                           </div>
                         </div>
                       </div>
-                      <Button className="min-h-[44px]">
+                      <Button className="min-h-[44px]" onClick={() => handleComplete(movement.id)}>
                         <QrCode className="h-4 w-4 mr-2" />
                         Scan for Receipt
                       </Button>
@@ -610,10 +711,10 @@ export function MovementsView() {
                   </TableHeader>
                   <TableBody>
                     {completedMovements.map((movement) => {
-                      const assetId = movement.assetId || movement.asset_id;
-                      const fromLoc = movement.fromLocation || movement.from_location;
-                      const toLoc = movement.toLocation || movement.to_location;
-                      const completedAt = movement.completedAt || movement.received_at;
+                      const assetId = movement.asset_id;
+                      const fromLoc = movement.from_location || 'Unknown';
+                      const toLoc = movement.to_location || 'Unknown';
+                      const completedAt = movement.received_at || movement.updated_at;
                       
                       return (
                       <TableRow key={movement.id}>
@@ -644,6 +745,264 @@ export function MovementsView() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Dispatch Scanner Dialog */}
+      <Dialog open={showDispatchScanner} onOpenChange={setShowDispatchScanner}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scan Asset for Dispatch</DialogTitle>
+            <DialogDescription>
+              Scan the asset's QR code to verify and dispatch the movement
+            </DialogDescription>
+          </DialogHeader>
+          
+          {scanningMovement && (
+            <div className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <p className="text-sm font-medium">Movement Details:</p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Asset:</span>{' '}
+                  {assets.find(a => a.id === scanningMovement.asset_id)?.name || 'Unknown'}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Expected Code:</span>{' '}
+                  {assets.find(a => a.id === scanningMovement.asset_id)?.asset_uid || 
+                   assets.find(a => a.id === scanningMovement.asset_id)?.asset_tag || 'N/A'}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">From:</span> {scanningMovement.from_location}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">To:</span> {scanningMovement.to_location}
+                </p>
+              </div>
+
+              {/* Input Method Toggle */}
+              <div className="flex gap-2 p-2 bg-muted rounded-lg">
+                <Button
+                  type="button"
+                  variant={!useCameraMode ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setUseCameraMode(false)}
+                >
+                  <Keyboard className="h-4 w-4 mr-2" />
+                  Manual Entry
+                </Button>
+                <Button
+                  type="button"
+                  variant={useCameraMode ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setUseCameraMode(true)}
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Scan QR Code
+                </Button>
+              </div>
+
+              {useCameraMode ? (
+                <div className="space-y-3">
+                  <div className="w-full bg-black rounded-lg overflow-hidden">
+                    <QrScanner
+                      delay={300}
+                      onError={(error: any) => {
+                        console.error('QR Scanner Error:', error);
+                        toast.error('Camera access denied or unavailable. Please use Manual Entry mode.');
+                        setUseCameraMode(false);
+                      }}
+                      onScan={(result: any) => {
+                        if (result?.text) {
+                          setScannedCode(result.text);
+                          setUseCameraMode(false);
+                          toast.success(`Scanned: ${result.text}`);
+                        }
+                      }}
+                      constraints={{
+                        video: { facingMode: 'environment' }
+                      }}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <p className="text-xs text-center text-muted-foreground">
+                    Position the QR code within the camera view. Code will be detected automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="dispatch-scan">Enter Asset UID / Scan with Barcode Scanner</Label>
+                  <Input
+                    id="dispatch-scan"
+                    placeholder="Type or scan asset UID (e.g., SPM-001)..."
+                    value={scannedCode}
+                    onChange={(e) => setScannedCode(e.target.value)}
+                    autoFocus
+                    className="font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && scannedCode.trim()) {
+                        confirmDispatch();
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    💡 Tip: Use a USB barcode scanner to scan directly into this field
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDispatchScanner(false);
+                setScanningMovement(null);
+                setScannedCode('');
+                setUseCameraMode(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmDispatch}
+              disabled={!scannedCode.trim()}
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Confirm Dispatch
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Scanner Dialog */}
+      <Dialog open={showReceiptScanner} onOpenChange={setShowReceiptScanner}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scan Asset for Receipt</DialogTitle>
+            <DialogDescription>
+              Scan the asset's QR code to verify and complete the movement
+            </DialogDescription>
+          </DialogHeader>
+          
+          {scanningMovement && (
+            <div className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <p className="text-sm font-medium">Movement Details:</p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Asset:</span>{' '}
+                  {assets.find(a => a.id === scanningMovement.asset_id)?.name || 'Unknown'}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Expected Code:</span>{' '}
+                  {assets.find(a => a.id === scanningMovement.asset_id)?.asset_uid || 
+                   assets.find(a => a.id === scanningMovement.asset_id)?.asset_tag || 'N/A'}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">From:</span> {scanningMovement.from_location}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">To:</span> {scanningMovement.to_location}
+                </p>
+              </div>
+
+              {/* Input Method Toggle */}
+              <div className="flex gap-2 p-2 bg-muted rounded-lg">
+                <Button
+                  type="button"
+                  variant={!useCameraMode ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setUseCameraMode(false)}
+                >
+                  <Keyboard className="h-4 w-4 mr-2" />
+                  Manual Entry
+                </Button>
+                <Button
+                  type="button"
+                  variant={useCameraMode ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setUseCameraMode(true)}
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Scan QR Code
+                </Button>
+              </div>
+
+              {useCameraMode ? (
+                <div className="space-y-3">
+                  <div className="w-full bg-black rounded-lg overflow-hidden">
+                    <QrScanner
+                      delay={300}
+                      onError={(error: any) => {
+                        console.error('QR Scanner Error:', error);
+                        toast.error('Camera access denied or unavailable. Please use Manual Entry mode.');
+                        setUseCameraMode(false);
+                      }}
+                      onScan={(result: any) => {
+                        if (result?.text) {
+                          setScannedCode(result.text);
+                          setUseCameraMode(false);
+                          toast.success(`Scanned: ${result.text}`);
+                        }
+                      }}
+                      constraints={{
+                        video: { facingMode: 'environment' }
+                      }}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <p className="text-xs text-center text-muted-foreground">
+                    Position the QR code within the camera view. Code will be detected automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="receipt-scan">Enter Asset UID / Scan with Barcode Scanner</Label>
+                  <Input
+                    id="receipt-scan"
+                    placeholder="Type or scan asset UID (e.g., SPM-001)..."
+                    value={scannedCode}
+                    onChange={(e) => setScannedCode(e.target.value)}
+                    autoFocus
+                    className="font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && scannedCode.trim()) {
+                        confirmReceipt();
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    💡 Tip: Use a USB barcode scanner to scan directly into this field
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowReceiptScanner(false);
+                setScanningMovement(null);
+                setScannedCode('');
+                setUseCameraMode(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmReceipt}
+              disabled={!scannedCode.trim()}
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Confirm Receipt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

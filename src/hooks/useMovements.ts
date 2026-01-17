@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { movementsApi, assetsApi } from '../lib/api-client';
+import { movementsService } from '../lib/supabase-services';
 import type { Movement } from '../lib/types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -18,8 +18,8 @@ export function useMovements() {
   const fetchMovements = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await movementsApi.getAll({ sortBy: 'createdAt', sortOrder: 'desc' });
-      setMovements(response.movements || []);
+      const data = await movementsService.getAll();
+      setMovements(data || []);
       setError(null);
     } catch (err) {
       setError(err as Error);
@@ -35,62 +35,74 @@ export function useMovements() {
 
   const createMovement = async (movementData: {
     asset_id: string;
-    from_location: string;
-    to_location: string;
-    requested_by?: string;
-    status?: string;
+    from_location_id?: string;
+    to_location_id?: string;
     reason?: string;
-    sla_hours?: number;
-    request_date?: string;
+    notes?: string;
   }) => {
     try {
       if (!user) {
         return { success: false, error: 'User not authenticated' };
       }
 
-      // Convert snake_case to camelCase for backend API
-      const response = await movementsApi.create({
-        assetId: movementData.asset_id,
-        fromLocation: movementData.from_location,
-        toLocation: movementData.to_location,
-        reason: movementData.reason,
-        slaHours: movementData.sla_hours || 24,
-      });
+      const data = await movementsService.create(movementData);
 
       // Refresh movements list
       await fetchMovements();
       
-      return { success: true, data: response };
+      return { success: true, data };
     } catch (err: any) {
       console.error('Error creating movement:', err);
       return { success: false, error: err.message || 'Failed to create movement' };
     }
   };
 
+  const getMovementsByAsset = (assetId: string): any[] => {
+    return movements.filter(m => m.asset_id === assetId);
+  };
+
   const approveMovement = async (movementId: string, approverId: string) => {
     try {
-      await movementsApi.approve(movementId);
+      const data = await movementsService.approve(movementId);
       await fetchMovements();
-      return { success: true };
+      return { success: true, data };
     } catch (err: any) {
       console.error('Error approving movement:', err);
       return { success: false, error: err.message || 'Failed to approve movement' };
     }
   };
 
-  const rejectMovement = async (movementId: string, rejectedBy: string, reason: string) => {
+  const rejectMovement = async (movementId: string, rejectorId: string, reason: string) => {
     try {
-      await movementsApi.reject(movementId, reason);
+      const data = await movementsService.reject(movementId, reason);
       await fetchMovements();
-      return { success: true };
+      return { success: true, data };
     } catch (err: any) {
       console.error('Error rejecting movement:', err);
       return { success: false, error: err.message || 'Failed to reject movement' };
     }
   };
 
-  const getMovementsByAsset = (assetId: string): any[] => {
-    return movements.filter(m => m.assetId === assetId);
+  const dispatchMovement = async (movementId: string) => {
+    try {
+      const data = await movementsService.updateStatus(movementId, 'In Transit');
+      await fetchMovements();
+      return { success: true, data };
+    } catch (err: any) {
+      console.error('Error dispatching movement:', err);
+      return { success: false, error: err.message || 'Failed to dispatch movement' };
+    }
+  };
+
+  const completeMovement = async (movementId: string) => {
+    try {
+      const data = await movementsService.updateStatus(movementId, 'Completed');
+      await fetchMovements();
+      return { success: true, data };
+    } catch (err: any) {
+      console.error('Error completing movement:', err);
+      return { success: false, error: err.message || 'Failed to complete movement' };
+    }
   };
 
   return {
@@ -100,6 +112,8 @@ export function useMovements() {
     createMovement,
     approveMovement,
     rejectMovement,
+    dispatchMovement,
+    completeMovement,
     getMovementsByAsset,
     refetch: fetchMovements,
   };

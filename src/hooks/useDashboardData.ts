@@ -1,18 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-// TODO: Implement dashboard API backend integration
-// import { query } from '../lib/database';
+import { dashboardService } from '../lib/supabase-services';
+import { supabase } from '../lib/supabase';
 
 export interface DashboardStats {
   total_assets: number;
   active_assets: number;
   maintenance_assets: number;
   inactive_assets: number;
+  retired_assets: number;
   recent_movements: number;
-  recent_audits: number;
-  tool_room_spm_count: number;
-  cnc_machine_count: number;
-  workstation_count: number;
-  material_handling_count: number;
+  category_counts: Record<string, number>;
 }
 
 export interface KPIData {
@@ -48,36 +45,39 @@ export function useDashboardData() {
     try {
       setLoading(true);
 
-      // TODO: Replace with backend API calls
-      // Temporary empty data until backend integration
-      const total = 0;
-      const active = 0;
-      const maintenance = 0;
-      const inactive = 0;
-      const recentMovements = 0;
-      const recentAudits = 0;
-      const toolRoomSpm = 0;
-      const cncMachine = 0;
-      const workstation = 0;
-      const materialHandling = 0;
-      const assetsWithCompleteData = 0;
-
-      const statsData = {
-        total_assets: total,
-        active_assets: active,
-        maintenance_assets: maintenance,
-        inactive_assets: inactive,
-        recent_movements: recentMovements,
-        recent_audits: recentAudits,
-        tool_room_spm_count: toolRoomSpm,
-        cnc_machine_count: cncMachine,
-        workstation_count: workstation,
-        material_handling_count: materialHandling,
-      };
-      
+      const statsData = await dashboardService.getStats();
       setStats(statsData);
 
-      const completenessPercent = total > 0 ? (assetsWithCompleteData / total) * 100 : 0;
+      // Calculate Asset Master Completeness properly
+      // Check if assets have all required fields filled
+      const { data: allAssets } = await supabase
+        .from('assets')
+        .select('*');
+
+      let completeAssets = 0;
+      const totalAssets = allAssets?.length || 0;
+
+      allAssets?.forEach((asset: any) => {
+        // Check if critical fields are filled
+        const hasName = !!asset.name;
+        const hasCategory = !!asset.category;
+        const hasLocation = !!asset.current_location;
+        const hasStatus = !!asset.status;
+        const hasCriticality = !!asset.criticality;
+        
+        // Optional but important fields
+        const hasOwner = !!asset.owner_department;
+        
+        // Asset is complete if all critical fields are filled
+        // and at least some optional fields
+        if (hasName && hasCategory && hasLocation && hasStatus && hasCriticality) {
+          completeAssets++;
+        }
+      });
+
+      const completenessPercent = totalAssets > 0 
+        ? (completeAssets / totalAssets) * 100 
+        : 0;
 
       // Calculate KPI values
       setKpiData({
@@ -87,7 +87,7 @@ export function useDashboardData() {
           status: completenessPercent >= 90 ? 'good' : completenessPercent >= 70 ? 'warning' : 'error',
         },
         activeAssets: {
-          value: active,
+          value: statsData.active_assets,
           trend: 0,
           status: 'good',
         },

@@ -9,6 +9,40 @@ interface ActivityFeedProps {
 }
 
 export function ActivityFeed({ activities }: ActivityFeedProps) {
+  const formatActivityDescription = (activity: any) => {
+    const details = activity.details || {};
+    const userName = activity.user?.name || 'Someone';
+    
+    switch (activity.action) {
+      case 'CREATE_ASSET':
+        return `${userName} created asset "${details.name || 'Unknown'}"`;
+      
+      case 'UPDATE_ASSET':
+        return `${userName} updated asset "${details.name || 'Unknown'}"`;
+      
+      case 'DELETE_ASSET':
+        return `${userName} deleted asset "${details.name || 'Unknown'}"`;
+      
+      case 'CREATE_MOVEMENT':
+        return `${userName} requested movement from ${details.from_location || 'Unknown'} to ${details.to_location || 'Unknown'}`;
+      
+      case 'APPROVE_MOVEMENT':
+        return `${userName} approved movement from ${details.from_location || 'Unknown'} to ${details.to_location || 'Unknown'}`;
+      
+      case 'REJECT_MOVEMENT':
+        return `${userName} rejected movement request`;
+      
+      case 'DISPATCH_MOVEMENT':
+        return `${userName} dispatched asset from ${details.from_location || 'Unknown'} to ${details.to_location || 'Unknown'}`;
+      
+      case 'COMPLETE_MOVEMENT':
+        return `${userName} completed movement to ${details.to_location || 'Unknown'}`;
+      
+      default:
+        return `${userName} performed ${activity.action.replace(/_/g, ' ').toLowerCase()}`;
+    }
+  };
+
   const getIcon = (entityType: string) => {
     switch (entityType) {
       case 'asset':
@@ -60,7 +94,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
               <div key={activity.id} className="flex gap-3 pb-4 border-b last:border-0 last:pb-0">
                 <div className="mt-1">{getIcon(activity.entity_type)}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm mb-1 leading-relaxed">{activity.action}</p>
+                  <p className="text-sm mb-1 leading-relaxed">{formatActivityDescription(activity)}</p>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{formatTime(activity.created_at)}</span>
                     <Badge

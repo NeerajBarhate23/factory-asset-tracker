@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -26,72 +26,106 @@ import { QRCodeDisplay } from './QRCodeDisplay';
 interface AssetRegistrationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  assetId?: string | null;
 }
 
-export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistrationDialogProps) {
-  const { createAsset } = useAssets();
+export function AssetRegistrationDialog({ open, onOpenChange, assetId }: AssetRegistrationDialogProps) {
+  const { createAsset, updateAsset, getAssetById } = useAssets();
+  const isEditMode = !!assetId;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdAsset, setCreatedAsset] = useState<{ uid: string; name: string } | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Predefined location options - can be customized based on factory layout
+  const commonLocations = [
+    'Production Floor A',
+    'Production Floor B',
+    'Assembly Line 1',
+    'Assembly Line 2',
+    'Warehouse',
+    'Maintenance Shop',
+    'Quality Control',
+    'Shipping & Receiving',
+    'Tool Room',
+    'Office',
+  ];
 
   // Form state
   const [formData, setFormData] = useState({
-    asset_uid: '',
+    asset_tag: '',
     name: '',
     category: '',
-    status: 'active',
-    location: '',
-    criticality: 'medium',
-    owner_department: '',
-    make: '',
+    status: 'ACTIVE',
+    location_id: '',
+    manufacturer: '',
     model: '',
     serial_number: '',
     purchase_date: '',
+    purchase_cost: '',
     warranty_expiry: '',
-    last_maintenance_date: '',
-    next_maintenance_date: '',
-    assigned_to: '',
-    specifications: '',
+    description: '',
     notes: '',
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Category mapping
+  const categories = [
+    { value: 'Machinery', label: 'Machinery' },
+    { value: 'Equipment', label: 'Equipment' },
+    { value: 'Tools', label: 'Tools' },
+    { value: 'Vehicles', label: 'Vehicles' },
+    { value: 'Electronics', label: 'Electronics' },
+    { value: 'Furniture', label: 'Furniture' },
+    { value: 'Other', label: 'Other' },
+  ];
 
-  // Category mapping between database values and display values
-  const categoryMap = {
-    'tool_room_spm': 'Tool Room SPM',
-    'cnc_machine': 'CNC Machine',
-    'workstation': 'Workstation',
-    'material_handling': 'Material Handling Equipment',
-  };
+  const statusOptions = [
+    { value: 'Active', label: 'Active' },
+    { value: 'Under Maintenance', label: 'Under Maintenance' },
+    { value: 'Inactive', label: 'Inactive' },
+    { value: 'Decommissioned', label: 'Decommissioned' },
+  ];
 
-  const statusMap = {
-    'active': 'Active',
-    'maintenance': 'Under Maintenance',
-    'inactive': 'Inactive',
-    'retired': 'Retired',
-  };
-
-  const criticalityMap = {
-    'high': 'High',
-    'medium': 'Medium',
-    'low': 'Low',
-  };
+  // Load asset data in edit mode
+  useEffect(() => {
+    if (open && isEditMode && assetId) {
+      const asset = getAssetById(assetId);
+      if (asset) {
+        setFormData({
+          asset_tag: asset.asset_uid || '',
+          name: asset.name || '',
+          category: asset.category || '',
+          status: asset.status || 'ACTIVE',
+          location_id: (asset as any).location || asset.current_location || '',
+          manufacturer: (asset as any).manufacturer || '',
+          model: (asset as any).model || '',
+          serial_number: (asset as any).serial_number || '',
+          purchase_date: (asset as any).purchase_date || '',
+          purchase_cost: (asset as any).purchase_cost?.toString() || '',
+          warranty_expiry: (asset as any).warranty_expiry || '',
+          description: (asset as any).description || '',
+          notes: (asset as any).notes || '',
+        });
+      }
+    } else if (!open) {
+      // Reset form when dialog closes
+      handleReset();
+      setShowSuccess(false);
+      setCreatedAsset(null);
+    }
+  }, [open, isEditMode, assetId, getAssetById]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.asset_uid.trim()) {
-      newErrors.asset_uid = 'Asset UID is required';
-    }
     if (!formData.name.trim()) {
       newErrors.name = 'Asset name is required';
     }
     if (!formData.category) {
       newErrors.category = 'Category is required';
     }
-    if (!formData.location.trim()) {
-      newErrors.location = 'Location is required';
+    if (!formData.status) {
+      newErrors.status = 'Status is required';
     }
 
     setErrors(newErrors);
@@ -109,40 +143,42 @@ export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistratio
     try {
       setIsSubmitting(true);
 
-      // Prepare data for submission (remove empty strings, convert enums to uppercase)
+      // Prepare data for submission
       const dataToSubmit: any = {
-        asset_uid: formData.asset_uid,
+        asset_uid: formData.asset_tag,
         name: formData.name,
-        category: formData.category.toUpperCase(),
-        status: formData.status.toUpperCase(),
-        location: formData.location,
-        criticality: formData.criticality.toUpperCase(),
+        category: formData.category,
+        status: formData.status,
+        current_location: formData.location_id,
       };
 
       // Add optional fields only if they have values
-      if (formData.owner_department) dataToSubmit.owner_department = formData.owner_department;
-      if (formData.make) dataToSubmit.make = formData.make;
+      if (formData.manufacturer) dataToSubmit.manufacturer = formData.manufacturer;
       if (formData.model) dataToSubmit.model = formData.model;
       if (formData.serial_number) dataToSubmit.serial_number = formData.serial_number;
       if (formData.purchase_date) dataToSubmit.purchase_date = formData.purchase_date;
+      if (formData.purchase_cost) dataToSubmit.purchase_cost = parseFloat(formData.purchase_cost);
       if (formData.warranty_expiry) dataToSubmit.warranty_expiry = formData.warranty_expiry;
-      if (formData.last_maintenance_date) dataToSubmit.last_maintenance_date = formData.last_maintenance_date;
-      if (formData.next_maintenance_date) dataToSubmit.next_maintenance_date = formData.next_maintenance_date;
-      if (formData.assigned_to) dataToSubmit.assigned_to = formData.assigned_to;
-      if (formData.specifications) dataToSubmit.specifications = formData.specifications;
-      if (formData.notes) dataToSubmit.notes = formData.notes;
+      if (formData.description) dataToSubmit.description = formData.description;
 
-      await createAsset(dataToSubmit);
-
-      setCreatedAsset({
-        uid: formData.asset_uid,
-        name: formData.name,
-      });
-      setShowSuccess(true);
-      toast.success('Asset registered successfully!');
+      if (isEditMode && assetId) {
+        // Update existing asset
+        await updateAsset(assetId, dataToSubmit);
+        toast.success('Asset updated successfully!');
+        onOpenChange(false);
+      } else {
+        // Create new asset
+        await createAsset(dataToSubmit);
+        setCreatedAsset({
+          uid: formData.asset_tag,
+          name: formData.name,
+        });
+        setShowSuccess(true);
+        toast.success('Asset registered successfully!');
+      }
     } catch (error) {
-      console.error('Error creating asset:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to register asset');
+      console.error('Error saving asset:', error);
+      toast.error(error instanceof Error ? error.message : `Failed to ${isEditMode ? 'update' : 'register'} asset`);
     } finally {
       setIsSubmitting(false);
     }
@@ -150,22 +186,18 @@ export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistratio
 
   const handleReset = () => {
     setFormData({
-      asset_uid: '',
+      asset_tag: '',
       name: '',
       category: '',
       status: 'active',
-      location: '',
-      criticality: 'medium',
-      owner_department: '',
-      make: '',
+      location_id: '',
+      manufacturer: '',
       model: '',
       serial_number: '',
       purchase_date: '',
+      purchase_cost: '',
       warranty_expiry: '',
-      last_maintenance_date: '',
-      next_maintenance_date: '',
-      assigned_to: '',
-      specifications: '',
+      description: '',
       notes: '',
     });
     setErrors({});
@@ -233,9 +265,11 @@ export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistratio
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Register New Asset</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Asset' : 'Register New Asset'}</DialogTitle>
           <DialogDescription>
-            Enter the details of the new asset. Fields marked with * are required.
+            {isEditMode 
+              ? 'Update the asset details. Fields marked with * are required.'
+              : 'Enter the details of the new asset. Fields marked with * are required.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -246,18 +280,18 @@ export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistratio
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="asset_uid">
-                  Asset UID <span className="text-destructive">*</span>
+                <Label htmlFor="asset_tag">
+                  Asset Tag
                 </Label>
                 <Input
-                  id="asset_uid"
-                  placeholder="e.g., SPM-001"
-                  value={formData.asset_uid}
-                  onChange={(e) => setFormData({ ...formData, asset_uid: e.target.value })}
-                  className={errors.asset_uid ? 'border-destructive' : ''}
+                  id="asset_tag"
+                  placeholder="e.g., AST-001"
+                  value={formData.asset_tag}
+                  onChange={(e) => setFormData({ ...formData, asset_tag: e.target.value })}
+                  className={errors.asset_tag ? 'border-destructive' : ''}
                 />
-                {errors.asset_uid && (
-                  <p className="text-sm text-destructive">{errors.asset_uid}</p>
+                {errors.asset_tag && (
+                  <p className="text-sm text-destructive">{errors.asset_tag}</p>
                 )}
               </div>
 
@@ -291,7 +325,7 @@ export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistratio
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(categoryMap).map(([value, label]) => (
+                    {categories.map(({ value, label }) => (
                       <SelectItem key={value} value={value}>
                         {label}
                       </SelectItem>
@@ -304,52 +338,72 @@ export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistratio
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
+                <Label htmlFor="status">
+                  Status <span className="text-destructive">*</span>
+                </Label>
                 <Select
                   value={formData.status}
                   onValueChange={(value) => setFormData({ ...formData, status: value })}
                 >
-                  <SelectTrigger id="status">
-                    <SelectValue />
+                  <SelectTrigger id="status" className={errors.status ? 'border-destructive' : ''}>
+                    <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(statusMap).map(([value, label]) => (
+                    {statusOptions.map(({ value, label }) => (
                       <SelectItem key={value} value={value}>
                         {label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {errors.status && (
+                  <p className="text-sm text-destructive">{errors.status}</p>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="criticality">Criticality</Label>
+                <Label htmlFor="location_id">
+                  Location
+                </Label>
                 <Select
-                  value={formData.criticality}
-                  onValueChange={(value) => setFormData({ ...formData, criticality: value })}
+                  value={formData.location_id}
+                  onValueChange={(value) => setFormData({ ...formData, location_id: value })}
                 >
-                  <SelectTrigger id="criticality">
-                    <SelectValue />
+                  <SelectTrigger id="location_id" className={errors.location_id ? 'border-destructive' : ''}>
+                    <SelectValue placeholder="Select location" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(criticalityMap).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
+                    {commonLocations.map((location) => (
+                      <SelectItem key={location} value={location}>
+                        {location}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {errors.location_id && (
+                  <p className="text-sm text-destructive">{errors.location_id}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Or enter custom location below
+                </p>
+                <Input
+                  id="custom_location"
+                  placeholder="Enter custom location"
+                  value={formData.location_id && !commonLocations.includes(formData.location_id) ? formData.location_id : ''}
+                  onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
+                  className="mt-2"
+                />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="owner_department">Owner Department</Label>
+                <Label htmlFor="manufacturer">Manufacturer</Label>
                 <Input
-                  id="owner_department"
-                  placeholder="e.g., Production"
-                  value={formData.owner_department}
-                  onChange={(e) => setFormData({ ...formData, owner_department: e.target.value })}
+                  id="manufacturer"
+                  placeholder="e.g., Siemens"
+                  value={formData.manufacturer}
+                  onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
                 />
               </div>
             </div>
@@ -490,10 +544,10 @@ export function AssetRegistrationDialog({ open, onOpenChange }: AssetRegistratio
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Registering...
+                  {isEditMode ? 'Updating...' : 'Registering...'}
                 </>
               ) : (
-                'Register Asset'
+                isEditMode ? 'Update Asset' : 'Register Asset'
               )}
             </Button>
           </DialogFooter>

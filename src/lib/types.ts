@@ -1,18 +1,23 @@
 // Shared TypeScript types for the application
+// Based on COMPLETE_SYSTEM_DOCUMENTATION.md
 
-export type UserRole = 'admin' | 'shop_incharge' | 'operator' | 'ADMIN' | 'SHOP_INCHARGE' | 'OPERATOR' | 'MAINTENANCE';
+export type UserRole = 'admin' | 'shop_incharge' | 'maintenance' | 'operator';
 
-export type AssetCategory = 'tool_room_spm' | 'cnc_machine' | 'workstation' | 'material_handling' | 'TOOL_ROOM_SPM' | 'CNC_MACHINE' | 'WORKSTATION' | 'MATERIAL_HANDLING';
-export type AssetStatus = 'active' | 'maintenance' | 'inactive' | 'retired' | 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE' | 'RETIRED';
-export type AssetCriticality = 'high' | 'medium' | 'low' | 'HIGH' | 'MEDIUM' | 'LOW';
+export type AssetCategory = 'Tool Room SPM' | 'CNC Machine' | 'Workstation' | 'Material Handling Equipment';
+export type AssetStatus = 'Active' | 'Inactive' | 'Under Maintenance' | 'Decommissioned';
+export type AssetCriticality = 'High' | 'Medium' | 'Low';
+
+export type MovementStatus = 'Pending' | 'Approved' | 'In Transit' | 'Completed' | 'Rejected';
+export type AuditStatus = 'Scheduled' | 'In Progress' | 'Completed' | 'Discrepancy Found';
 
 export interface User {
   id: string;
   email: string;
   name: string;
   role: UserRole;
-  created_at: string;
-  updated_at: string;
+  department?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Asset {
@@ -20,23 +25,14 @@ export interface Asset {
   asset_uid: string;
   name: string;
   category: AssetCategory;
+  current_location: string;
   status: AssetStatus;
-  location: string;
-  criticality?: AssetCriticality | null;
-  owner_department?: string | null;
-  make?: string | null;
-  model?: string | null;
-  serial_number?: string | null;
-  purchase_date?: string | null;
-  warranty_expiry?: string | null;
-  last_maintenance_date?: string | null;
-  next_maintenance_date?: string | null;
-  assigned_to?: string | null;
-  specifications?: string | null;
-  notes?: string | null;
-  created_at: string;
-  updated_at: string;
-  created_by: string;
+  criticality: AssetCriticality;
+  owner_department?: string;
+  qr_code?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Movement {
@@ -44,31 +40,44 @@ export interface Movement {
   asset_id: string;
   from_location: string;
   to_location: string;
-  moved_by: string;
-  moved_at: string;
-  reason?: string | null;
-  notes?: string | null;
+  requested_by: string;
+  approved_by?: string;
+  status: MovementStatus;
+  reason?: string;
+  sla_hours: number;
+  request_date: string;
+  approval_date?: string;
+  dispatched_at?: string;
+  received_at?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Audit {
   id: string;
-  asset_id: string;
-  audited_by: string;
-  audited_at: string;
-  status: string;
-  condition?: string | null;
-  issues_found?: string | null;
-  recommendations?: string | null;
-  photos?: string | null;
+  location: string;
+  category: string;
+  scheduled_date: string;
+  completed_date?: string;
+  status: AuditStatus;
+  auditor_id?: string;
+  assets_scanned: number;
+  total_assets: number;
+  discrepancies: number;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface Activity {
+export interface ActivityLog {
   id: string;
-  user_id: string;
+  user_id?: string;
   action: string;
   entity_type: string;
-  entity_id?: string | null;
-  details?: string | null;
+  entity_id?: string;
+  details?: Record<string, any>;
+  ip_address?: string;
+  user_agent?: string;
   created_at: string;
 }
 
@@ -88,9 +97,17 @@ export interface KPIData {
     trend: number;
     status: 'good' | 'warning' | 'critical';
   };
-  unauthorizedMovements: {
-    value: number;
-    trend: number;
-    status: 'good' | 'warning' | 'critical';
-  };
 }
+
+// Legacy type for backward compatibility
+export type Location = {
+  id: string;
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  created_at?: string;
+  updated_at?: string;
+};

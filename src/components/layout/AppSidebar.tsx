@@ -6,7 +6,6 @@ import {
   BarChart3,
   Settings,
   Users,
-  Globe,
 } from "lucide-react";
 import {
   Sidebar,
@@ -41,7 +40,6 @@ interface MenuItem {
     { id: "audits", label: "Audits", icon: ClipboardList, roles: ['admin', 'shop_incharge', 'operator', 'ADMIN', 'SHOP_INCHARGE', 'OPERATOR'] as any },
     { id: "reports", label: "Reports", icon: BarChart3, roles: ['admin', 'shop_incharge', 'operator', 'ADMIN', 'SHOP_INCHARGE', 'OPERATOR'] as any },
     { id: "users", label: "Users", icon: Users, roles: ['admin', 'ADMIN'] as any },
-    { id: "api-test", label: "API Test", icon: Globe, roles: ['admin', 'ADMIN'] as any },
     { id: "settings", label: "Settings", icon: Settings, roles: ['admin', 'shop_incharge', 'operator', 'ADMIN', 'SHOP_INCHARGE', 'OPERATOR'] as any },
   ];
 

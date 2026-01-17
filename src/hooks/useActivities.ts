@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-// TODO: Implement activities API backend integration
-// import { query } from '../lib/database';
+import { activityService } from '../lib/supabase-services';
 import type { Activity } from '../lib/types';
 
 export interface ActivityWithUser extends Activity {
@@ -16,9 +15,8 @@ export function useActivities(limit: number = 50) {
   const fetchActivities = useCallback(async () => {
     try {
       setLoading(true);
-      // TODO: Replace with backend API call
-      const results: ActivityWithUser[] = [];
-      setActivities(results);
+      const data = await activityService.getAll(limit);
+      setActivities(data as any);
       setError(null);
     } catch (err) {
       setError(err as Error);
