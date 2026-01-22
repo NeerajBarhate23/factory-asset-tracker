@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authApi } from '../lib/api-client';
+import { supabase } from '../lib/supabase';
 import type { User } from '../lib/types';
 
 interface AuthContextType {
@@ -23,17 +23,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function initializeAuth() {
     try {
-      // Check for stored access token
-      const accessToken = localStorage.getItem('accessToken');
-      if (accessToken) {
-        try {
-          // Verify token is valid by fetching current user
-          const userData = await authApi.getCurrentUser();
-          setUser(userData as User);
-        } catch (error) {
-          // Token invalid, clear it
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
+      // Check for existing Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        // Fetch user profile from public.users table
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile) {
+          setUser(profile as User);
         }
       }
     } catch (error) {
@@ -45,9 +47,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function login(email: string, password: string) {
     try {
-      const userData = await authApi.login(email, password);
-      setUser(userData);
-      // Tokens are automatically stored by api-client
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Fetch user profile
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+        
+        if (profile) {
+          setUser(profile as User);
+        }
+      }
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -56,13 +74,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     try {
-      await authApi.logout();
+      await supabase.auth.signOut();
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
       setUser(null);
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
     }
   }
 

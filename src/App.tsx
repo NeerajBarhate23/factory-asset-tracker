@@ -10,7 +10,6 @@ import { AuditsView } from './components/audits/AuditsView';
 import { ReportsView } from './components/reports/ReportsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { UserManagement } from './components/admin/UserManagement';
-import APITester from './components/admin/APITester';
 import { LoginForm } from './components/auth/LoginForm';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Toaster } from './components/ui/sonner';
@@ -24,27 +23,14 @@ function AppContent() {
   // Handle deep linking from QR code scans
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const assetParam = urlParams.get('asset');
+    const assetIdParam = urlParams.get('asset_id');
     
-    if (assetParam && user) {
-      // Find asset by UID and navigate to it
-      import('./lib/api-client').then(({ assetsApi }) => {
-        assetsApi.getAll().then((assets) => {
-          try {
-            const asset = assets.find((a: any) => a.assetUid === assetParam || a.asset_uid === assetParam);
-            if (asset) {
-              setActiveView('assets');
-              setSelectedAssetId(asset.id);
-              // Clear URL parameter
-              window.history.replaceState({}, '', window.location.pathname);
-            }
-          } catch (err) {
-            console.error('Error finding asset:', err);
-          }
-        }).catch(err => {
-          console.error('Error fetching assets:', err);
-        });
-      });
+    if (assetIdParam && user) {
+      // Navigate directly to asset detail using the asset ID from QR code
+      setActiveView('assets');
+      setSelectedAssetId(assetIdParam);
+      // Clear URL parameter
+      window.history.replaceState({}, '', window.location.pathname);
     }
   }, [user]);
 
@@ -89,8 +75,6 @@ function AppContent() {
       case 'users':
         // Only show User Management to admins
         return user?.role === 'admin' || user?.role === 'ADMIN' ? <UserManagement /> : <DashboardView />;
-      case 'api-test':
-        return <APITester />;
       case 'settings':
         return <SettingsView />;
       default:

@@ -54,7 +54,7 @@ export function useFiles(assetId: string) {
     fetchFiles();
   }, [fetchFiles]);
 
-  const uploadFile = async (file: File) => {
+  const uploadFile = async (file: File, customName?: string) => {
     if (!user) throw new Error('User not authenticated');
 
     // Limit file size to 5MB to avoid performance issues
@@ -64,8 +64,8 @@ export function useFiles(assetId: string) {
     }
 
     try {
-      console.log('Uploading file:', file.name, 'for asset:', assetId);
-      const result = await filesApi.upload(file, assetId);
+      console.log('Uploading file:', customName || file.name, 'for asset:', assetId);
+      const result = await filesApi.upload(file, assetId, customName);
       console.log('Upload successful:', result);
       await fetchFiles();
     } catch (err) {

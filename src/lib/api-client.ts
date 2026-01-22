@@ -455,65 +455,55 @@ export const auditsApi = {
 };
 
 /**
- * Files API
+ * Files API - Using Supabase Services
  */
+import { filesService } from './supabase-services';
+
 export const filesApi = {
-  upload: async (file: File, assetId: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('assetId', assetId);
-
-    const { accessToken } = getTokens();
-    const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
-      method: 'POST',
-      headers: {
-        ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'File upload failed');
-    }
-
-    return response.json();
+  upload: async (file: File, assetId: string, customName?: string) => {
+    return filesService.upload(file, assetId, customName);
   },
 
   getById: async (fileId: string) => {
-    return api.get(`/api/files/${fileId}`);
+    return filesService.getById(fileId);
   },
 
   getAssetFiles: async (assetId: string) => {
-    return api.get(`/api/files/asset/${assetId}`);
+    return filesService.getByAsset(assetId);
   },
 
   getPreviewUrl: (fileId: string) => {
-    return `${API_BASE_URL}/api/files/${fileId}/preview`;
+    // For Supabase, the file_path already contains the public URL
+    return fileId; // This will be replaced with actual URL from file object
   },
 
   preview: async (fileId: string) => {
-    const { accessToken } = getTokens();
-    const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/preview`, {
-      method: 'GET',
-      headers: {
-        ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
-      },
-    });
+    // Get file metadata first
+    const fileData = await filesService.getById(fileId);
+    if (!fileData?.file_path) {
+      throw new Error('File not found');
+    }
 
+    // Fetch the file from the public URL
+    const response = await fetch(fileData.file_path);
     if (!response.ok) {
       throw new Error('Failed to preview file');
     }
 
-    return response.blob(); // Return blob for preview
+    return response.blob();
   },
 
   delete: async (fileId: string) => {
-    return api.delete(`/api/files/${fileId}`);
+    return filesService.delete(fileId);
   },
 
   getStats: async () => {
-    return api.get('/api/files/stats');
+    // Get file statistics from files table
+    const files = await filesService.getAll();
+    return {
+      totalFiles: files.length,
+      totalSize: files.reduce((sum: number, f: any) => sum + (f.file_size || 0), 0),
+    };
   },
 };
 

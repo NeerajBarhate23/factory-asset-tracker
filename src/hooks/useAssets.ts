@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { assetsApi } from '../lib/api-client';
+import { assetsService } from '../lib/supabase-services';
 import type { Asset } from '../lib/types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,17 +11,19 @@ export function useAssets() {
 
   const fetchAssets = useCallback(async () => {
     try {
+      console.log('🔄 Fetching assets...');
       setLoading(true);
-      const response = await assetsApi.getAll();
-      // Handle both array response and paginated response
-      const assetsData = Array.isArray(response) ? response : (response?.assets || response?.data || []);
-      setAssets(assetsData);
+      const data = await assetsService.getAll();
+      console.log('✅ Assets fetched:', data?.length || 0, 'assets');
+      console.log('📦 Sample asset:', data?.[0]);
+      setAssets(data as Asset[]);
       setError(null);
     } catch (err) {
+      console.error('❌ Error fetching assets:', err);
       setError(err as Error);
-      console.error('Error fetching assets:', err);
     } finally {
       setLoading(false);
+      console.log('✨ Loading complete');
     }
   }, []);
 
@@ -33,7 +35,7 @@ export function useAssets() {
     if (!user) throw new Error('User not authenticated');
 
     try {
-      const newAsset = await assetsApi.create(assetData);
+      const newAsset = await assetsService.create(assetData);
       await fetchAssets();
       return newAsset.id;
     } catch (err) {
@@ -46,7 +48,7 @@ export function useAssets() {
     if (!user) throw new Error('User not authenticated');
 
     try {
-      await assetsApi.update(id, updates);
+      await assetsService.update(id, updates);
       await fetchAssets();
     } catch (err) {
       console.error('Error updating asset:', err);
@@ -58,7 +60,7 @@ export function useAssets() {
     if (!user) throw new Error('User not authenticated');
 
     try {
-      await assetsApi.delete(id);
+      await assetsService.delete(id);
       await fetchAssets();
     } catch (err) {
       console.error('Error deleting asset:', err);
@@ -71,7 +73,7 @@ export function useAssets() {
   };
 
   const getAssetByUid = (uid: string): Asset | undefined => {
-    return assets.find(asset => asset.asset_uid === uid);
+    return assets.find(asset => asset.asset_tag === uid || (asset as any).asset_uid === uid);
   };
 
   return {
@@ -96,7 +98,7 @@ export function useAsset(assetId: string) {
     const fetchAsset = async () => {
       try {
         setLoading(true);
-        const result = await assetsApi.getById(assetId);
+        const result = await assetsService.getById(assetId);
         setAsset(result || null);
         setError(null);
       } catch (err) {

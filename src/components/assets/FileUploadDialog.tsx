@@ -77,9 +77,8 @@ export function FileUploadDialog({ assetId, assetName, open, onOpenChange, onUpl
 
     for (const fileItem of selectedFiles) {
       try {
-        // Just upload the original file for now
-        // TODO: Implement server-side file renaming
-        await uploadFile(fileItem.file);
+        // Upload with custom filename
+        await uploadFile(fileItem.file, fileItem.customName);
         successCount++;
       } catch (error) {
         console.error('Error uploading file:', error);
