@@ -302,7 +302,7 @@ export function MovementsView() {
     return movement?.asset?.asset_tag || '';
   };
 
-  // Get location name by id
+  // Get location name by id  
   const getLocationName = (locationId: string | undefined) => {
     if (!locationId) return 'Unknown Location';
     const location = locations.find((l) => l.id === locationId);

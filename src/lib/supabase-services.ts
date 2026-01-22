@@ -622,13 +622,25 @@ export const filesService = {
 // ============= DASHBOARD API =============
 export const dashboardService = {
   async getStats() {
-    // Get asset counts by status
+    // Get asset counts by status and compute master completeness
     const { data: assets } = await supabase
       .from('assets')
-      .select('status');
+      .select('*');
+
+    // Define required fields that constitute a "complete" asset master record
+    const requiredFields = ['asset_uid', 'name', 'category', 'current_location', 'status', 'criticality'];
+
+    const total = assets?.length || 0;
+    const completeCount = (assets || []).filter((a: any) =>
+      requiredFields.every(field => {
+        const val = a[field];
+        return val !== null && val !== undefined && String(val).trim() !== '';
+      })
+    ).length;
 
     const stats = {
-      total_assets: assets?.length || 0,
+      total_assets: total,
+      complete_assets: completeCount,
       active_assets: assets?.filter(a => a.status === 'Active').length || 0,
       maintenance_assets: assets?.filter(a => a.status === 'Under Maintenance').length || 0,
       inactive_assets: assets?.filter(a => a.status === 'Inactive').length || 0,

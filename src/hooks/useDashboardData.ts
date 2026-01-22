@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dashboardService } from '../lib/supabase-services';
-import { supabase } from '../lib/supabase';
 
 export interface DashboardStats {
   total_assets: number;
+  complete_assets?: number;
   active_assets: number;
   maintenance_assets: number;
   inactive_assets: number;
@@ -48,35 +48,8 @@ export function useDashboardData() {
       const statsData = await dashboardService.getStats();
       setStats(statsData);
 
-      // Calculate Asset Master Completeness properly
-      // Check if assets have all required fields filled
-      const { data: allAssets } = await supabase
-        .from('assets')
-        .select('*');
-
-      let completeAssets = 0;
-      const totalAssets = allAssets?.length || 0;
-
-      allAssets?.forEach((asset: any) => {
-        // Check if critical fields are filled
-        const hasName = !!asset.name;
-        const hasCategory = !!asset.category;
-        const hasLocation = !!asset.current_location;
-        const hasStatus = !!asset.status;
-        const hasCriticality = !!asset.criticality;
-        
-        // Optional but important fields
-        const hasOwner = !!asset.owner_department;
-        
-        // Asset is complete if all critical fields are filled
-        // and at least some optional fields
-        if (hasName && hasCategory && hasLocation && hasStatus && hasCriticality) {
-          completeAssets++;
-        }
-      });
-
-      const completenessPercent = totalAssets > 0 
-        ? (completeAssets / totalAssets) * 100 
+      const completenessPercent = statsData.total_assets > 0 
+        ? ((statsData.complete_assets || 0) / statsData.total_assets) * 100 
         : 0;
 
       // Calculate KPI values
